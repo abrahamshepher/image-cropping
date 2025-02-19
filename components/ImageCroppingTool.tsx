@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import Image from "next/image"
 import * as faceapi from "face-api.js"
-import ReactCrop, { centerCrop, type Crop } from "react-image-crop"
+import ReactCrop, { makeAspectCrop, type Crop } from "react-image-crop"
 import "react-image-crop/dist/ReactCrop.css"
 import { Upload, Camera, CropIcon, Loader2, Menu, Scan } from "lucide-react"
 
@@ -21,12 +21,7 @@ export default function ImageCroppingTool() {
   const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(null)
   const [detections, setDetections] = useState<
     faceapi.WithFaceDescriptor<
-      faceapi.WithFaceLandmarks<
-        {
-          detection: faceapi.FaceDetection
-        },
-        faceapi.FaceLandmarks68
-      >
+      faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>
     >[]
   >([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -84,46 +79,138 @@ export default function ImageCroppingTool() {
     }
   }
 
+  const findBestCrop = async (img: HTMLImageElement, aspect: number): Promise<Crop> => {
+    const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks()
+
+    if (detections.length > 0) {
+      // If faces are detected, center the crop on the faces
+      const faceBoxes = detections.map((d) => d.detection.box)
+      const centerX = faceBoxes.reduce((sum, box) => sum + box.x + box.width / 2, 0) / faceBoxes.length
+      const centerY = faceBoxes.reduce((sum, box) => sum + box.y + box.height / 2, 0) / faceBoxes.length
+
+      let cropWidth = img.width
+      let cropHeight = img.height
+
+      if (aspect > 1) {
+        cropHeight = cropWidth / aspect
+      } else {
+        cropWidth = cropHeight * aspect
+      }
+
+      const x = Math.max(0, centerX - cropWidth / 2)
+      const y = Math.max(0, centerY - cropHeight / 2)
+
+      return makeAspectCrop(
+        {
+          unit: "%",
+          width: (cropWidth / img.width) * 100,
+          height: (cropHeight / img.height) * 100,
+          x: (x / img.width) * 100,
+          y: (y / img.height) * 100,
+        },
+        aspect,
+        img.width,
+        img.height,
+      )
+    } else {
+      // If no faces are detected, use a simple rule-based approach
+      const imageData = getImageData(img)
+      const interestingArea = findInterestingArea(imageData, img.width, img.height)
+
+      let cropWidth = img.width
+      let cropHeight = img.height
+
+      if (aspect > 1) {
+        cropHeight = cropWidth / aspect
+      } else {
+        cropWidth = cropHeight * aspect
+      }
+
+      const x = Math.max(0, interestingArea.x - (cropWidth - interestingArea.width) / 2)
+      const y = Math.max(0, interestingArea.y - (cropHeight - interestingArea.height) / 2)
+
+      return makeAspectCrop(
+        {
+          unit: "%",
+          width: (cropWidth / img.width) * 100,
+          height: (cropHeight / img.height) * 100,
+          x: (x / img.width) * 100,
+          y: (y / img.height) * 100,
+        },
+        aspect,
+        img.width,
+        img.height,
+      )
+    }
+  }
+
+  const getImageData = (img: HTMLImageElement): ImageData => {
+    const canvas = document.createElement("canvas")
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Could not get 2D context")
+    ctx.drawImage(img, 0, 0, img.width, img.height)
+    return ctx.getImageData(0, 0, img.width, img.height)
+  }
+
+  const findInterestingArea = (imageData: ImageData, width: number, height: number) => {
+    const blockSize = 16
+    const blocksX = Math.ceil(width / blockSize)
+    const blocksY = Math.ceil(height / blockSize)
+    let maxEnergy = 0
+    let maxEnergyX = 0
+    let maxEnergyY = 0
+
+    for (let y = 0; y < blocksY; y++) {
+      for (let x = 0; x < blocksX; x++) {
+        const energy = calculateBlockEnergy(imageData, x * blockSize, y * blockSize, blockSize, width)
+        if (energy > maxEnergy) {
+          maxEnergy = energy
+          maxEnergyX = x
+          maxEnergyY = y
+        }
+      }
+    }
+
+    return {
+      x: maxEnergyX * blockSize,
+      y: maxEnergyY * blockSize,
+      width: blockSize,
+      height: blockSize,
+    }
+  }
+
+  const calculateBlockEnergy = (
+    imageData: ImageData,
+    startX: number,
+    startY: number,
+    blockSize: number,
+    width: number,
+  ) => {
+    let energy = 0
+    for (let y = startY; y < startY + blockSize && y < imageData.height; y++) {
+      for (let x = startX; x < startX + blockSize && x < imageData.width; x++) {
+        const i = (y * width + x) * 4
+        const r = imageData.data[i]
+        const g = imageData.data[i + 1]
+        const b = imageData.data[i + 2]
+        energy += (r + g + b) / 3
+      }
+    }
+    return energy
+  }
+
   const onImageLoad = useCallback(
     async (img: HTMLImageElement) => {
       if (!isModelLoaded) return
 
       try {
         setIsProcessing(true)
-        const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
-        if (detections.length > 0) {
-          const face = detections[0]
-          const { x, y, width, height } = face.box
-
-          const centerX = x + width / 2
-          const centerY = y + height / 2
-
-          let cropWidth, cropHeight
-          if (aspect >= 1) {
-            cropWidth = width * 2
-            cropHeight = cropWidth / aspect
-          } else {
-            cropHeight = height * 2
-            cropWidth = cropHeight * aspect
-          }
-
-          const cropX = Math.max(centerX - cropWidth / 2, 0)
-          const cropY = Math.max(centerY - cropHeight / 2, 0)
-          const finalCropWidth = Math.min(cropWidth, img.width - cropX)
-          const finalCropHeight = Math.min(cropHeight, img.height - cropY)
-          const crop: any = {
-            unit: "%",
-            width: (finalCropWidth / img.width) * 100,
-            height: (finalCropHeight / img.height) * 100,
-            x: (cropX / img.width) * 100,
-            y: (cropY / img.height) * 100,
-            aspect,
-          }
-          const centeredCrop: any = centerCrop(crop, img.width, img.height)
-          setCrop(centeredCrop)
-        }
+        const bestCrop = await findBestCrop(img, aspect)
+        setCrop(bestCrop)
       } catch (error) {
-        console.error("Error detecting faces:", error)
+        console.error("Error finding best crop:", error)
       } finally {
         setIsProcessing(false)
       }

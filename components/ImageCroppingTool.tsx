@@ -1,104 +1,128 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useEffect, useRef, useCallback } from "react"
-import Image from "next/image"
-import * as faceapi from "face-api.js"
-import ReactCrop, { makeAspectCrop, type Crop } from "react-image-crop"
-import "react-image-crop/dist/ReactCrop.css"
-import { Upload, Camera, CropIcon, Loader2, Menu, Scan } from "lucide-react"
+import type React from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image";
+import * as faceapi from "face-api.js";
+import ReactCrop, { makeAspectCrop, type Crop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
+import { Upload, Camera, CropIcon, Loader2, Menu, Scan } from "lucide-react";
 
 const labeledImages = [
   { name: "black-widow", url: "/labeled-images/black-widow.jpeg" },
   { name: "captain-america", url: "/labeled-images/captain-america.avif" },
-]
+];
 
 export default function ImageCroppingTool() {
-  const [src, setSrc] = useState<string | null>(null)
-  const [crop, setCrop] = useState<Crop>()
-  const [aspect, setAspect] = useState<number>(1)
-  const imageRef = useRef<HTMLImageElement>(null)
-  const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(null)
+  const [src, setSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [aspect, setAspect] = useState<number>(1);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [faceMatcher, setFaceMatcher] = useState<faceapi.FaceMatcher | null>(
+    null
+  );
   const [detections, setDetections] = useState<
     faceapi.WithFaceDescriptor<
-      faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>
+      faceapi.WithFaceLandmarks<
+        { detection: faceapi.FaceDetection },
+        faceapi.FaceLandmarks68
+      >
     >[]
-  >([])
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [isModelLoaded, setIsModelLoaded] = useState(false)
-  const [modelLoadingError, setModelLoadingError] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  >([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isModelLoaded, setIsModelLoaded] = useState(false);
+  const [modelLoadingError, setModelLoadingError] = useState<string | null>(
+    null
+  );
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     const loadModelsAndCreateMatcher = async () => {
       try {
-        await faceapi.nets.tinyFaceDetector.loadFromUri("/models")
-        await faceapi.nets.faceLandmark68Net.loadFromUri("/models")
-        await faceapi.nets.faceRecognitionNet.loadFromUri("/models")
+        await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+        await faceapi.nets.faceLandmark68Net.loadFromUri("/models");
+        await faceapi.nets.faceRecognitionNet.loadFromUri("/models");
 
         const labeledFaceDescriptors = await Promise.all(
           labeledImages.map(async (label) => {
             try {
-              const img = await faceapi.fetchImage(label.url)
+              const img = await faceapi.fetchImage(label.url);
               const detection = await faceapi
                 .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
                 .withFaceLandmarks()
-                .withFaceDescriptor()
+                .withFaceDescriptor();
 
               if (!detection) {
-                throw new Error(`No face detected in ${label.name}`)
+                throw new Error(`No face detected in ${label.name}`);
               }
-              return new faceapi.LabeledFaceDescriptors(label.name, [detection.descriptor])
+              return new faceapi.LabeledFaceDescriptors(label.name, [
+                detection.descriptor,
+              ]);
             } catch (error) {
-              console.error(`Error processing ${label.name}:`, error)
-              throw error
+              console.error(`Error processing ${label.name}:`, error);
+              throw error;
             }
-          }),
-        )
+          })
+        );
 
-        const matcher = new faceapi.FaceMatcher(labeledFaceDescriptors)
-        setFaceMatcher(matcher)
-        setIsModelLoaded(true)
-        setModelLoadingError(null)
+        const matcher = new faceapi.FaceMatcher(labeledFaceDescriptors);
+        setFaceMatcher(matcher);
+        setIsModelLoaded(true);
+        setModelLoadingError(null);
       } catch (error) {
-        console.error("Error loading models or creating face matcher:", error)
-        setModelLoadingError(`Error loading models: ${error instanceof Error ? error.message : String(error)}`)
-        setIsModelLoaded(false)
+        console.error("Error loading models or creating face matcher:", error);
+        setModelLoadingError(
+          `Error loading models: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        setIsModelLoaded(false);
       }
-    }
+    };
 
-    loadModelsAndCreateMatcher()
-  }, [])
+    loadModelsAndCreateMatcher();
+  }, []);
 
   const onSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const reader = new FileReader()
-      reader.addEventListener("load", () => setSrc(reader.result?.toString() || null))
-      reader.readAsDataURL(e.target.files[0])
+      const reader = new FileReader();
+      reader.addEventListener("load", () =>
+        setSrc(reader.result?.toString() || null)
+      );
+      reader.readAsDataURL(e.target.files[0]);
     }
-  }
+  };
 
-  const findBestCrop = async (img: HTMLImageElement, aspect: number): Promise<Crop> => {
-    const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks()
+  const findBestCrop = async (
+    img: HTMLImageElement,
+    aspect: number
+  ): Promise<Crop> => {
+    const detections = await faceapi
+      .detectAllFaces(img, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks();
 
     if (detections.length > 0) {
       // If faces are detected, center the crop on the faces
-      const faceBoxes = detections.map((d) => d.detection.box)
-      const centerX = faceBoxes.reduce((sum, box) => sum + box.x + box.width / 2, 0) / faceBoxes.length
-      const centerY = faceBoxes.reduce((sum, box) => sum + box.y + box.height / 2, 0) / faceBoxes.length
+      const faceBoxes = detections.map((d) => d.detection.box);
+      const centerX =
+        faceBoxes.reduce((sum, box) => sum + box.x + box.width / 2, 0) /
+        faceBoxes.length;
+      const centerY =
+        faceBoxes.reduce((sum, box) => sum + box.y + box.height / 2, 0) /
+        faceBoxes.length;
 
-      let cropWidth = img.width
-      let cropHeight = img.height
+      let cropWidth = img.width;
+      let cropHeight = img.height;
 
       if (aspect > 1) {
-        cropHeight = cropWidth / aspect
+        cropHeight = cropWidth / aspect;
       } else {
-        cropWidth = cropHeight * aspect
+        cropWidth = cropHeight * aspect;
       }
 
-      const x = Math.max(0, centerX - cropWidth / 2)
-      const y = Math.max(0, centerY - cropHeight / 2)
+      const x = Math.max(0, centerX - cropWidth / 2);
+      const y = Math.max(0, centerY - cropHeight / 2);
 
       return makeAspectCrop(
         {
@@ -110,24 +134,34 @@ export default function ImageCroppingTool() {
         },
         aspect,
         img.width,
-        img.height,
-      )
+        img.height
+      );
     } else {
       // If no faces are detected, use a simple rule-based approach
-      const imageData = getImageData(img)
-      const interestingArea = findInterestingArea(imageData, img.width, img.height)
+      const imageData = getImageData(img);
+      const interestingArea = findInterestingArea(
+        imageData,
+        img.width,
+        img.height
+      );
 
-      let cropWidth = img.width
-      let cropHeight = img.height
+      let cropWidth = img.width;
+      let cropHeight = img.height;
 
       if (aspect > 1) {
-        cropHeight = cropWidth / aspect
+        cropHeight = cropWidth / aspect;
       } else {
-        cropWidth = cropHeight * aspect
+        cropWidth = cropHeight * aspect;
       }
 
-      const x = Math.max(0, interestingArea.x - (cropWidth - interestingArea.width) / 2)
-      const y = Math.max(0, interestingArea.y - (cropHeight - interestingArea.height) / 2)
+      const x = Math.max(
+        0,
+        interestingArea.x - (cropWidth - interestingArea.width) / 2
+      );
+      const y = Math.max(
+        0,
+        interestingArea.y - (cropHeight - interestingArea.height) / 2
+      );
 
       return makeAspectCrop(
         {
@@ -139,36 +173,46 @@ export default function ImageCroppingTool() {
         },
         aspect,
         img.width,
-        img.height,
-      )
+        img.height
+      );
     }
-  }
+  };
 
   const getImageData = (img: HTMLImageElement): ImageData => {
-    const canvas = document.createElement("canvas")
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext("2d")
-    if (!ctx) throw new Error("Could not get 2D context")
-    ctx.drawImage(img, 0, 0, img.width, img.height)
-    return ctx.getImageData(0, 0, img.width, img.height)
-  }
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not get 2D context");
+    ctx.drawImage(img, 0, 0, img.width, img.height);
+    return ctx.getImageData(0, 0, img.width, img.height);
+  };
 
-  const findInterestingArea = (imageData: ImageData, width: number, height: number) => {
-    const blockSize = 16
-    const blocksX = Math.ceil(width / blockSize)
-    const blocksY = Math.ceil(height / blockSize)
-    let maxEnergy = 0
-    let maxEnergyX = 0
-    let maxEnergyY = 0
+  const findInterestingArea = (
+    imageData: ImageData,
+    width: number,
+    height: number
+  ) => {
+    const blockSize = 16;
+    const blocksX = Math.ceil(width / blockSize);
+    const blocksY = Math.ceil(height / blockSize);
+    let maxEnergy = 0;
+    let maxEnergyX = 0;
+    let maxEnergyY = 0;
 
     for (let y = 0; y < blocksY; y++) {
       for (let x = 0; x < blocksX; x++) {
-        const energy = calculateBlockEnergy(imageData, x * blockSize, y * blockSize, blockSize, width)
+        const energy = calculateBlockEnergy(
+          imageData,
+          x * blockSize,
+          y * blockSize,
+          blockSize,
+          width
+        );
         if (energy > maxEnergy) {
-          maxEnergy = energy
-          maxEnergyX = x
-          maxEnergyY = y
+          maxEnergy = energy;
+          maxEnergyX = x;
+          maxEnergyY = y;
         }
       }
     }
@@ -178,55 +222,57 @@ export default function ImageCroppingTool() {
       y: maxEnergyY * blockSize,
       width: blockSize,
       height: blockSize,
-    }
-  }
+    };
+  };
 
   const calculateBlockEnergy = (
     imageData: ImageData,
     startX: number,
     startY: number,
     blockSize: number,
-    width: number,
+    width: number
   ) => {
-    let energy = 0
+    let energy = 0;
     for (let y = startY; y < startY + blockSize && y < imageData.height; y++) {
       for (let x = startX; x < startX + blockSize && x < imageData.width; x++) {
-        const i = (y * width + x) * 4
-        const r = imageData.data[i]
-        const g = imageData.data[i + 1]
-        const b = imageData.data[i + 2]
-        energy += (r + g + b) / 3
+        const i = (y * width + x) * 4;
+        const r = imageData.data[i];
+        const g = imageData.data[i + 1];
+        const b = imageData.data[i + 2];
+        energy += (r + g + b) / 3;
       }
     }
-    return energy
-  }
+    return energy;
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const onImageLoad = useCallback(
     async (img: HTMLImageElement) => {
-      if (!isModelLoaded) return
+      if (!isModelLoaded) return;
 
       try {
-        setIsProcessing(true)
-        const bestCrop = await findBestCrop(img, aspect)
-        setCrop(bestCrop)
+        setIsProcessing(true);
+        const bestCrop = await findBestCrop(img, aspect);
+        setCrop(bestCrop);
       } catch (error) {
-        console.error("Error finding best crop:", error)
+        console.error("Error finding best crop:", error);
       } finally {
-        setIsProcessing(false)
+        setIsProcessing(false);
       }
     },
-    [aspect, isModelLoaded],
-  )
+    [aspect, isModelLoaded]
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const getCroppedImg = useCallback(() => {
-    if (!crop || !imageRef.current) return
+    if (!crop || !imageRef.current) return;
 
-    const canvas = document.createElement("canvas")
-    const scaleX = imageRef.current.naturalWidth / imageRef.current.width
-    const scaleY = imageRef.current.naturalHeight / imageRef.current.height
-    canvas.width = crop.width
-    canvas.height = crop.height
-    const ctx = canvas.getContext("2d")
+    const canvas = document.createElement("canvas");
+    const scaleX = imageRef.current.naturalWidth / imageRef.current.width;
+    const scaleY = imageRef.current.naturalHeight / imageRef.current.height;
+    canvas.width = crop.width;
+    canvas.height = crop.height;
+    const ctx = canvas.getContext("2d");
 
     if (ctx) {
       ctx.drawImage(
@@ -238,61 +284,67 @@ export default function ImageCroppingTool() {
         0,
         0,
         crop.width,
-        crop.height,
-      )
+        crop.height
+      );
 
       canvas.toBlob((blob) => {
         if (!blob) {
-          console.error("Canvas is empty")
-          return
+          console.error("Canvas is empty");
+          return;
         }
-        const previewUrl = URL.createObjectURL(blob)
-        const link = document.createElement("a")
-        link.download = "cropped-image.png"
-        link.href = previewUrl
-        link.click()
-      }, "image/png")
+        const previewUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = "cropped-image.png";
+        link.href = previewUrl;
+        link.click();
+      }, "image/png");
     }
-  }, [crop])
+  }, [crop]);
 
   const detectFaces = async () => {
-    if (!imageRef.current || !canvasRef.current || !faceMatcher || !isModelLoaded) return
+    if (
+      !imageRef.current ||
+      !canvasRef.current ||
+      !faceMatcher ||
+      !isModelLoaded
+    )
+      return;
 
     try {
-      setIsProcessing(true)
+      setIsProcessing(true);
       const detections = await faceapi
         .detectAllFaces(imageRef.current, new faceapi.TinyFaceDetectorOptions())
         .withFaceLandmarks()
-        .withFaceDescriptors()
+        .withFaceDescriptors();
 
-      setDetections(detections)
+      setDetections(detections);
 
-      faceapi.matchDimensions(canvasRef.current, imageRef.current)
+      faceapi.matchDimensions(canvasRef.current, imageRef.current);
 
       const resizedDetections = faceapi.resizeResults(detections, {
         width: imageRef.current.width,
         height: imageRef.current.height,
-      })
+      });
 
-      const ctx = canvasRef.current.getContext("2d")
+      const ctx = canvasRef.current.getContext("2d");
       if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
 
       resizedDetections.forEach((detection) => {
-        const bestMatch = faceMatcher.findBestMatch(detection.descriptor)
-        const box = detection.detection.box
+        const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+        const box = detection.detection.box;
         const drawBox = new faceapi.draw.DrawBox(box, {
           label: bestMatch.toString(),
-        })
-        drawBox.draw(canvasRef.current as HTMLCanvasElement)
-      })
+        });
+        drawBox.draw(canvasRef.current as HTMLCanvasElement);
+      });
     } catch (error) {
-      console.error("Error detecting faces:", error)
+      console.error("Error detecting faces:", error);
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -304,13 +356,22 @@ export default function ImageCroppingTool() {
             </div>
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-4">
-                <a href="#" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                <a
+                  href="#"
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                >
                   Home
                 </a>
-                <a href="#" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                <a
+                  href="#"
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                >
                   About
                 </a>
-                <a href="#" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                <a
+                  href="#"
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                >
                   Contact
                 </a>
               </div>
@@ -328,13 +389,22 @@ export default function ImageCroppingTool() {
         {isMenuOpen && (
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-              <a href="#" className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700">
+              <a
+                href="#"
+                className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700"
+              >
                 Home
               </a>
-              <a href="#" className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700">
+              <a
+                href="#"
+                className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700"
+              >
                 About
               </a>
-              <a href="#" className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700">
+              <a
+                href="#"
+                className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700"
+              >
                 Contact
               </a>
             </div>
@@ -347,17 +417,26 @@ export default function ImageCroppingTool() {
           <div className="flex flex-col items-center text-center">
             <div className="flex items-center mb-4">
               <Scan className="w-10 h-10 mr-3" />
-              <h1 className="text-4xl font-extrabold tracking-tight">Image Cropping & Face Recognition Tool</h1>
+              <h1 className="text-4xl font-extrabold tracking-tight">
+                Image Cropping and Face Recognition Tool
+              </h1>
             </div>
             <div className="max-w-3xl mx-auto">
               <p className="mt-4 text-xl text-gray-100">
-                Upload any image to crop it perfectly or detect faces. Our AI can recognize Chris Evans as Captain
-                America and Scarlett Johansson as Black Widow!
+                Upload any image to crop it perfectly or detect faces. Our AI
+                can recognize Chris Evans as Captain America and Scarlett
+                Johansson as Black Widow
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-4 text-sm">
-                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">Automatic Face Detection</span>
-                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">Smart Cropping</span>
-                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">Celebrity Recognition</span>
+                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">
+                  Automatic Face Detection
+                </span>
+                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">
+                  Smart Cropping
+                </span>
+                <span className="px-4 py-2 bg-white/10 rounded-full backdrop-blur-sm">
+                  Celebrity Recognition
+                </span>
               </div>
             </div>
           </div>
@@ -367,12 +446,18 @@ export default function ImageCroppingTool() {
       <main className="flex-grow">
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {modelLoadingError ? (
-            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+            <div
+              className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6"
+              role="alert"
+            >
               <p className="font-bold">Error loading models</p>
               <p>{modelLoadingError}</p>
             </div>
           ) : !isModelLoaded ? (
-            <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6" role="alert">
+            <div
+              className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6"
+              role="alert"
+            >
               <p className="font-bold">Loading face recognition models...</p>
               <p>Please wait while we set things up for you.</p>
             </div>
@@ -382,7 +467,12 @@ export default function ImageCroppingTool() {
             <label className="flex items-center justify-center w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg cursor-pointer hover:bg-blue-600 transition-colors">
               <Upload className="w-5 h-5 mr-2" />
               Upload Image
-              <input type="file" accept="image/*" onChange={onSelectFile} className="hidden" />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={onSelectFile}
+                className="hidden"
+              />
             </label>
             <select
               onChange={(e) => setAspect(Number.parseFloat(e.target.value))}
@@ -397,7 +487,11 @@ export default function ImageCroppingTool() {
 
           {src && (
             <div className="mb-8">
-              <ReactCrop crop={crop} onChange={(c) => setCrop(c)} aspect={aspect}>
+              <ReactCrop
+                crop={crop}
+                onChange={(c) => setCrop(c)}
+                aspect={aspect}
+              >
                 <Image
                   ref={imageRef}
                   src={src || "/placeholder.svg"}
@@ -419,7 +513,7 @@ export default function ImageCroppingTool() {
                 disabled={isProcessing}
               >
                 <CropIcon className="w-5 h-5 mr-2" />
-                Crop & Download
+                Crop and Download
               </button>
             )}
             {src && isModelLoaded && (
@@ -442,23 +536,34 @@ export default function ImageCroppingTool() {
 
           {src && isModelLoaded && (
             <>
-              <canvas ref={canvasRef} className="mx-auto mb-8 rounded-lg shadow-lg hidden" />
+              <canvas
+                ref={canvasRef}
+                className="mx-auto mb-8 rounded-lg shadow-lg hidden"
+              />
               <div className="bg-gray-100 p-6 rounded-lg shadow">
-                <h2 className="text-xl font-bold mb-4 text-gray-800">Detected Faces:</h2>
+                <h2 className="text-xl font-bold mb-4 text-gray-800">
+                  Detected Faces:
+                </h2>
                 {detections.length > 0 ? (
                   <ul className="list-disc list-inside">
                     {detections.map((detection, index) => {
-                      const bestMatch = faceMatcher?.findBestMatch(detection.descriptor)
+                      const bestMatch = faceMatcher?.findBestMatch(
+                        detection.descriptor
+                      );
                       return (
-                        <li key={index} className="mb-2 text-green-700 text-2xl text-bold ">
+                        <li
+                          key={index}
+                          className="mb-2 text-green-700 text-2xl text-bold "
+                        >
                           Face {index + 1}: {bestMatch?.toString()}
                         </li>
-                      )
+                      );
                     })}
                   </ul>
                 ) : (
                   <p className="text-gray-600">
-                    No faces detected yet. Try uploading an image and clicking "Detect Faces".
+                    No faces detected yet. Try uploading an image and clicking
+                    Detect Faces.
                   </p>
                 )}
               </div>
@@ -488,6 +593,5 @@ export default function ImageCroppingTool() {
         </div>
       </footer>
     </div>
-  )
+  );
 }
-

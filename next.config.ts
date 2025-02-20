@@ -8,15 +8,8 @@ const nextConfig: NextConfig = {
     config.resolve.fallback = { fs: false };
     return config;
   },
-  rules: {
-    "react-hooks/exhaustive-deps": "off",
-    "react/no-unescaped-entities": "off",
-  },
+
   reactStrictMode: true,
-
 };
-const withTM = require('next-transpile-modules')(['face-api.js']);
-
-
 
 export default nextConfig;
